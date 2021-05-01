@@ -1,12 +1,39 @@
 sudo: required
 services:
   - docker
+env:
+  global:
+    # SHA is the git sha tag (i.e. indicates the specific snapshop of your source code)
+    - SHA=$(git rev-parse HEAD)
+    # this disables any cloud sdk prompts
+    - CLOUDSDK_CORE_DISABLE_PROMPTS=1
 before_install:
-  - openssl aes-256-cbc -K $encrypted_9f3b5599b056_key -iv $encrypted_9f3b5599b056_iv -in service-account.json.enc -out service-account.json -d
+  # decrypt the service-account.json.enc file into service-account.json file (it contains Google Cloud credentials)
+  - openssl aes-256-cbc -K $encrypted_9f3b5599b056_key -iv $encrypted_9f3b5599b056_iv -in service-account.json.enc-out service-account.json -d
+  # install Google Cloud CLI
   - curl https://sdk.cloud.google.com | bash > /dev/null;
   - source $HOME/google-cloud-sdk/path.bash.inc
+  # Install/update kubectl
   - gcloud components update kubectl
+  # Login to Google Cloud
   - gcloud auth activate-service-account --key-file service.account.json
+  # Indicate the k8s project name, zone, cluster
   - gcloud config set project multi-k8s-312315
   - gcloud config set compute/zone europe-central2-a
   - gcloud container clusters get-credentials multi-cluster
+  # Login to Docker Hub (DOCKER_PASSWORD and DOCKER_USERNAME must be saved as environment variables in travis.com)
+  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+  # build a docker image for running tests
+  - docker build -t zavanton/react-test -f ./client/Dockerfile.dev ./client
+
+script:
+  # run the tests
+  - docker run -e CI=true zavanton/react-test npm test
+
+deploy:
+  # Setup manual deployment via deploy.sh script
+  provider: script
+  script: bash ./deploy.sh
+  # travis will do it only when master branch is pushed
+  on:
+    branch: master
